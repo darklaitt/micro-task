@@ -1,52 +1,72 @@
 openapi: 3.0.3
 info:
-  title: Micro Task API
+  title: Micro Task Management API
   description: >-
-    OpenAPI спецификация для микросервисного бэкенда управления задачами (users, orders).
+    Микросервисная система управления задачами для строительных объектов.
+    Включает управление пользователями, заказами, аутентификацию и авторизацию.
   version: "1.0.0"
+  contact:
+    name: API Support
+    email: support@example.com
+
 servers:
-  - url: http://localhost:3000
-    description: local
+  - url: http://localhost:8000
+    description: Development server
+  - url: http://test-server:8000
+    description: Test server
+  - url: https://api.production.com
+    description: Production server
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: JWT токен, полученный при регистрации или входе
+
   schemas:
-    ErrorDetail:
-      type: object
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-      required: [code, message]
-    StandardResponse:
+    ErrorResponse:
       type: object
       properties:
         success:
           type: boolean
-        data:
-          nullable: true
+          example: false
         error:
-          $ref: '#/components/schemas/ErrorDetail'
-      required: [success]
+          type: object
+          properties:
+            code:
+              type: string
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              example: "Ошибка валидации данных"
+            details:
+              type: array
+              items:
+                type: object
+      required: [success, error]
+
     User:
       type: object
       properties:
         id:
           type: string
           format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
         email:
           type: string
           format: email
+          example: "user@example.com"
         name:
           type: string
+          example: "Иван Иванов"
         roles:
           type: array
           items:
             type: string
+            enum: [user, admin, manager]
+          example: ["user"]
         createdAt:
           type: string
           format: date-time
@@ -54,34 +74,73 @@ components:
           type: string
           format: date-time
       required: [id, email, name, roles]
+
     RegisterRequest:
       type: object
       properties:
         email:
           type: string
           format: email
+          example: "user@example.com"
         password:
           type: string
+          minLength: 6
+          example: "password123"
         name:
           type: string
+          minLength: 1
+          example: "Иван Иванов"
+        roles:
+          type: array
+          items:
+            type: string
+          example: ["user"]
       required: [email, password, name]
+
     LoginRequest:
       type: object
       properties:
         email:
           type: string
           format: email
+          example: "user@example.com"
         password:
           type: string
+          example: "password123"
       required: [email, password]
+
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            token:
+              type: string
+              example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
     OrderItem:
       type: object
       properties:
-        product:
+        productName:
           type: string
+          example: "Кирпич красный"
         quantity:
           type: integer
           minimum: 1
+          example: 100
+        price:
+          type: number
+          format: double
+          minimum: 0
+          example: 25.50
+      required: [productName, quantity, price]
+
     Order:
       type: object
       properties:
@@ -97,336 +156,71 @@ components:
             $ref: '#/components/schemas/OrderItem'
         status:
           type: string
-          enum: [created, in_progress, done, cancelled]
-        total:
+          enum: [created, in_progress, completed, cancelled]
+          example: "created"
+        totalAmount:
           type: number
           format: double
+          example: 2550.00
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-      required: [id, userId, items, status, total]
+      required: [id, userId, items, status, totalAmount]
+
     CreateOrderRequest:
       type: object
       properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/OrderItem'
-      required: [items]
-paths:
-  /v1/users/register:
-    post:
-      summary: Регистрация пользователя
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterRequest'
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-  /v1/users/login:
-    post:
-      summary: Вход
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-  /v1/users/me:
-    get:
-      summary: Получить профиль текущего пользователя
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-    put:
-      summary: Обновить профиль
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-  /v1/users:
-    get:
-      summary: Список пользователей (admin)
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: query
-          name: page
-          schema:
-            type: integer
-            default: 1
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            default: 10
-        - in: query
-          name: q
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-  /v1/orders:
-    post:
-      summary: Создать заказ
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateOrderRequest'
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-    get:
-      summary: Список заказов текущего пользователя
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: query
-          name: page
-          schema:
-            type: integer
-            default: 1
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            default: 10
-        - in: query
-          name: sort
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-  /v1/orders/{id}:
-    parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      summary: Получить заказ по id
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-    patch:
-      summary: Обновить статус заказа
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                status:
-                  type: string
-                  enum: [created, in_progress, done, cancelled]
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-    delete:
-      summary: Отменить заказ
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StandardResponse'
-security:
-  - bearerAuth: []
-openapi: 3.0.3
-info:
-  title: Micro Task API
-  description: >-
-    OpenAPI спецификация для микросервисного бэкенда управления задачами (users, orders).
-  version: "1.0.0"
-servers:
-  - url: http://localhost:3000
-    description: local
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-  schemas:
-    ErrorDetail:
-      type: object
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-      required: [code, message]
-    StandardResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          nullable: true
-        error:
-          $ref: '#/components/schemas/ErrorDetail'
-      required: [success]
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        email:
-          type: string
-          format: email
-        name:
-          type: string
-        roles:
-          type: array
-          items:
-            type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, email, name, roles]
-    RegisterRequest:
-      type: object
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-        name:
-          type: string
-      required: [email, password, name]
-    LoginRequest:
-      type: object
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-      required: [email, password]
-    OrderItem:
-      type: object
-      properties:
-        product:
-          type: string
-        quantity:
-          type: integer
-          minimum: 1
-    Order:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
         userId:
           type: string
           format: uuid
         items:
           type: array
+          minItems: 1
           items:
             $ref: '#/components/schemas/OrderItem'
-        status:
-          type: string
-          enum: [created, in_progress, done, cancelled]
-        total:
-          type: number
-          format: double
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, userId, items, status, total]
-    CreateOrderRequest:
+      required: [userId, items]
+
+    UpdateOrderStatusRequest:
       type: object
       properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/OrderItem'
-      required: [items]
+        status:
+          type: string
+          enum: [created, in_progress, completed, cancelled]
+      required: [status]
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 10
+        total:
+          type: integer
+          example: 50
+        totalPages:
+          type: integer
+          example: 5
+        hasNext:
+          type: boolean
+          example: true
+        hasPrev:
+          type: boolean
+          example: false
+
 paths:
-  /v1/users/register:
+  /api/v1/auth/register:
     post:
-      summary: Регистрация пользователя
+      tags:
+        - Authentication
+      summary: Регистрация нового пользователя
+      description: Создаёт нового пользователя с хешированием пароля и возвращает JWT токен
+      operationId: register
       requestBody:
         required: true
         content:
@@ -435,14 +229,25 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         '201':
-          description: Created
+          description: Пользователь успешно зарегистрирован
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-  /v1/users/login:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Ошибка валидации или email уже существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/login:
     post:
-      summary: Вход
+      tags:
+        - Authentication
+      summary: Вход в систему
+      description: Аутентификация пользователя и получение JWT токена
+      operationId: login
       requestBody:
         required: true
         content:
@@ -451,25 +256,52 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: OK
+          description: Успешная аутентификация
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-  /v1/users/me:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Неверные учётные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/profile:
     get:
+      tags:
+        - Users
       summary: Получить профиль текущего пользователя
+      description: Возвращает информацию о текущем авторизованном пользователе
+      operationId: getProfile
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: OK
+          description: Профиль пользователя
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
     put:
-      summary: Обновить профиль
+      tags:
+        - Users
+      summary: Обновить профиль пользователя
+      description: Обновляет имя и/или email текущего пользователя
+      operationId: updateProfile
       security:
         - bearerAuth: []
       requestBody:
@@ -481,16 +313,31 @@ paths:
               properties:
                 name:
                   type: string
+                email:
+                  type: string
+                  format: email
       responses:
         '200':
-          description: OK
+          description: Профиль успешно обновлён
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-  /v1/users:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Не авторизован
+
+  /api/v1/users:
     get:
-      summary: Список пользователей (admin)
+      tags:
+        - Users
+      summary: Получить список пользователей (только для администраторов)
+      description: Возвращает список всех пользователей с пагинацией и фильтрацией
+      operationId: listUsers
       security:
         - bearerAuth: []
       parameters:
@@ -499,25 +346,53 @@ paths:
           schema:
             type: integer
             default: 1
+          description: Номер страницы
         - in: query
           name: limit
           schema:
             type: integer
             default: 10
+          description: Количество записей на странице
         - in: query
-          name: q
+          name: role
           schema:
             type: string
+            enum: [user, admin, manager]
+          description: Фильтр по роли
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Поиск по имени или email
       responses:
         '200':
-          description: OK
+          description: Список пользователей
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-  /v1/orders:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      users:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/User'
+                      pagination:
+                        $ref: '#/components/schemas/PaginationMeta'
+        '403':
+          description: Доступ запрещён (требуется роль admin)
+
+  /api/v1/orders:
     post:
-      summary: Создать заказ
+      tags:
+        - Orders
+      summary: Создать новый заказ
+      description: Создаёт заказ для указанного пользователя
+      operationId: createOrder
       security:
         - bearerAuth: []
       requestBody:
@@ -528,13 +403,27 @@ paths:
               $ref: '#/components/schemas/CreateOrderRequest'
       responses:
         '201':
-          description: Created
+          description: Заказ успешно создан
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '400':
+          description: Ошибка валидации
+        '403':
+          description: Недостаточно прав
+
     get:
-      summary: Список заказов текущего пользователя
+      tags:
+        - Orders
+      summary: Получить список заказов
+      description: Возвращает список заказов текущего пользователя (или всех для admin)
+      operationId: listOrders
       security:
         - bearerAuth: []
       parameters:
@@ -549,17 +438,42 @@ paths:
             type: integer
             default: 10
         - in: query
-          name: sort
+          name: status
           schema:
             type: string
+            enum: [created, in_progress, completed, cancelled]
+        - in: query
+          name: sortBy
+          schema:
+            type: string
+            default: createdAt
+        - in: query
+          name: sortOrder
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
       responses:
         '200':
-          description: OK
+          description: Список заказов
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-  /v1/orders/{id}:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      orders:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Order'
+                      pagination:
+                        $ref: '#/components/schemas/PaginationMeta'
+
+  /api/v1/orders/{id}:
     parameters:
       - in: path
         name: id
@@ -567,48 +481,133 @@ paths:
         schema:
           type: string
           format: uuid
+        description: ID заказа
+
     get:
-      summary: Получить заказ по id
+      tags:
+        - Orders
+      summary: Получить заказ по ID
+      description: Возвращает детали конкретного заказа
+      operationId: getOrder
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: OK
+          description: Детали заказа
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-    patch:
-      summary: Обновить статус заказа
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '404':
+          description: Заказ не найден
+        '403':
+          description: Доступ запрещён
+
+    delete:
+      tags:
+        - Orders
+      summary: Отменить заказ
+      description: Отменяет заказ (устанавливает статус cancelled)
+      operationId: cancelOrder
       security:
         - bearerAuth: []
+      responses:
+        '200':
+          description: Заказ отменён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '400':
+          description: Невозможно отменить заказ
+        '403':
+          description: Недостаточно прав
+        '404':
+          description: Заказ не найден
+
+  /api/v1/orders/{id}/status:
+    put:
+      tags:
+        - Orders
+      summary: Обновить статус заказа
+      description: Изменяет статус заказа
+      operationId: updateOrderStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                status:
-                  type: string
-                  enum: [created, in_progress, done, cancelled]
+              $ref: '#/components/schemas/UpdateOrderStatusRequest'
       responses:
         '200':
-          description: OK
+          description: Статус обновлён
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-    delete:
-      summary: Отменить заказ
-      security:
-        - bearerAuth: []
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '400':
+          description: Недопустимое изменение статуса
+        '403':
+          description: Недостаточно прав
+        '404':
+          description: Заказ не найден
+
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      description: Проверка работоспособности API Gateway
+      operationId: healthCheck
       responses:
         '200':
-          description: OK
+          description: Сервис работает
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StandardResponse'
-security:
-  - bearerAuth: []
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                      timestamp:
+                        type: string
+                        format: date-time
+
+tags:
+  - name: Authentication
+    description: Операции аутентификации и регистрации
+  - name: Users
+    description: Управление пользователями
+  - name: Orders
+    description: Управление заказами
+  - name: System
+    description: Системные операции
