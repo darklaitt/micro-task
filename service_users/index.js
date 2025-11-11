@@ -1,5 +1,12 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const requestIdMiddleware = require('./middleware/requestId');
+const logger = require('./utils/logger');
+const { register, login } = require('./controllers/authController');
+const authMiddleware = require('./middleware/auth');
+const { usersDb } = require('./controllers/authController');
+const { UpdateProfileSchema } = require('./models/user');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -7,84 +14,86 @@ const PORT = process.env.PORT || 8000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(requestIdMiddleware);
 
-// Имитация базы данных в памяти (LocalStorage)
-let fakeUsersDb = {};
-let currentId = 1;
-
-// Routes
-app.get('/users', (req, res) => {
-    const users = Object.values(fakeUsersDb);
-    res.json(users);
-});
-
-app.post('/users', (req, res) => {
-    const userData = req.body;
-    const userId = currentId++;
-
-    const newUser = {
-        id: userId,
-        ...userData
-    };
-
-    fakeUsersDb[userId] = newUser;
-    res.status(201).json(newUser);
-});
-
-app.get('/users/health', (req, res) => {
+// Health check routes
+app.get('/health', (req, res) => {
     res.json({
-        status: 'OK',
-        service: 'Users Service',
-        timestamp: new Date().toISOString()
+        success: true,
+        data: {
+            status: 'OK',
+            service: 'Users Service',
+            timestamp: new Date().toISOString()
+        }
     });
 });
 
-app.get('/users/status', (req, res) => {
-    res.json({status: 'Users service is running'});
+app.get('/status', (req, res) => {
+    res.json({
+        success: true,
+        data: {
+            status: 'Users service is running'
+        }
+    });
 });
 
-app.get('/users/:userId', (req, res) => {
-    const userId = parseInt(req.params.userId);
-    const user = fakeUsersDb[userId];
+// API v1 routes - Authentication
+app.post('/api/v1/auth/register', register);
+app.post('/api/v1/auth/login', login);
 
+// Получение профиля текущего пользователя
+app.get('/api/v1/users/profile', authMiddleware(), (req, res) => {
+    const user = usersDb.get(req.user.userId);
     if (!user) {
-        return res.status(404).json({error: 'User not found'});
+        return res.status(404).json({
+            success: false,
+            error: {
+                code: 'USER_NOT_FOUND',
+                message: 'Пользователь не найден'
+            }
+        });
     }
-
-    res.json(user);
+    res.json({ success: true, data: user.toJSON() });
 });
 
-app.put('/users/:userId', (req, res) => {
-    const userId = parseInt(req.params.userId);
-    const updates = req.body;
-
-    if (!fakeUsersDb[userId]) {
-        return res.status(404).json({error: 'User not found'});
+// Обновление профиля текущего пользователя
+app.put('/api/v1/users/profile', authMiddleware(), (req, res) => {
+    const user = usersDb.get(req.user.userId);
+    if (!user) {
+        return res.status(404).json({
+            success: false,
+            error: {
+                code: 'USER_NOT_FOUND',
+                message: 'Пользователь не найден'
+            }
+        });
     }
-
-    const updatedUser = {
-        ...fakeUsersDb[userId],
-        ...updates
-    };
-
-    fakeUsersDb[userId] = updatedUser;
-    res.json(updatedUser);
-});
-
-app.delete('/users/:userId', (req, res) => {
-    const userId = parseInt(req.params.userId);
-
-    if (!fakeUsersDb[userId]) {
-        return res.status(404).json({error: 'User not found'});
+    try {
+        const validated = UpdateProfileSchema.parse(req.body);
+        user.update(validated);
+        res.json({ success: true, data: user.toJSON() });
+    } catch (error) {
+        if (error.name === 'ZodError') {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Ошибка валидации данных',
+                    details: error.errors
+                }
+            });
+        }
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Внутренняя ошибка сервера'
+            }
+        });
     }
-
-    const deletedUser = fakeUsersDb[userId];
-    delete fakeUsersDb[userId];
-
-    res.json({message: 'User deleted', deletedUser});
 });
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Users service running on port ${PORT}`);
+    logger.info(`Users service running on port ${PORT}`);
 });
