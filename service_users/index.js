@@ -93,6 +93,69 @@ app.put('/api/v1/users/profile', authMiddleware(), (req, res) => {
     }
 });
 
+// Получение списка пользователей (только для администраторов)
+app.get('/api/v1/users', authMiddleware(['admin']), (req, res) => {
+    try {
+        // Параметры пагинации
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const role = req.query.role;
+        const search = req.query.search;
+
+        // Получаем всех пользователей
+        let users = Array.from(usersDb.values());
+
+        // Фильтрация по роли
+        if (role) {
+            users = users.filter(u => u.roles.includes(role));
+        }
+
+        // Поиск по имени или email
+        if (search) {
+            const searchLower = search.toLowerCase();
+            users = users.filter(u => 
+                u.name.toLowerCase().includes(searchLower) || 
+                u.email.toLowerCase().includes(searchLower)
+            );
+        }
+
+        // Подсчёт общего количества
+        const total = users.length;
+        const totalPages = Math.ceil(total / limit);
+
+        // Пагинация
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + limit;
+        const paginatedUsers = users.slice(startIndex, endIndex);
+
+        req.log?.info({ page, limit, total, filters: { role, search } }, 'Users list requested');
+
+        res.json({
+            success: true,
+            data: {
+                users: paginatedUsers.map(u => u.toJSON()),
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages,
+                    hasNext: page < totalPages,
+                    hasPrev: page > 1
+                }
+            }
+        });
+    } catch (error) {
+        req.log?.error({ error: error.message }, 'Error fetching users list');
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Внутренняя ошибка сервера'
+            }
+        });
+    }
+});
+
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
     logger.info(`Users service running on port ${PORT}`);
